@@ -30,18 +30,23 @@ class BoundedMemoryCacheSuite extends FunSuite with PrivateMethodTester with Sho
     // Work around to check for either.
 
     //should be OK
+    // 两个值都可以，jdk 7 和 jdk 6 返回值不同
     cache.put("1", 0, "Meh") should (equal (CachePutSuccess(56)) or equal (CachePutSuccess(48)))
 
     //we cannot add this to cache (there is not enough space in cache) & we cannot evict the only value from
     //cache because it's from the same dataset
+    // 同一个 rddId 所以不能 evict
     expect(CachePutFailure())(cache.put("1", 1, "Meh"))
 
     //should be OK, dataset '1' can be evicted from cache
+    // 把 rddId 1 的数据给换出去
     cache.put("2", 0, "Meh") should (equal (CachePutSuccess(56)) or equal (CachePutSuccess(48)))
 
     //should fail, cache should obey it's capacity
+    // string太大了，比cache 容量还大
     expect(CachePutFailure())(cache.put("3", 0, "Very_long_and_useless_string"))
 
+    // 把配置换回去
     if (oldArch != null) {
       System.setProperty("os.arch", oldArch)
     } else {

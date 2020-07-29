@@ -19,10 +19,12 @@ class ServerStateException(message: String) extends Exception(message)
  * as well as classes created by the interpreter when the user types in code. This is just a wrapper
  * around a Jetty server.
  */
+ // 在 master 上启动了一个 server ，在master上，是为了让worker 可以拿到jar包，
+ // 在worker 上，是为了让其他worker 拿shuffle 文件
 class HttpServer(resourceBase: File) extends Logging {
   private var server: Server = null
   private var port: Int = -1
-
+    // 启动 jetty
   def start() {
     if (server != null) {
       throw new ServerStateException("Server is already started")
@@ -33,12 +35,17 @@ class HttpServer(resourceBase: File) extends Logging {
       // 最少8 线程
       threadPool.setMinThreads(System.getProperty("spark.http.minThreads", "8").toInt)
       server.setThreadPool(threadPool)
+      // 资源处理器
       val resHandler = new ResourceHandler
+      // 资源所在的位置
       resHandler.setResourceBase(resourceBase.getAbsolutePath)
       val handlerList = new HandlerList
+      // 默认处理器与资源处理器
       handlerList.setHandlers(Array(resHandler, new DefaultHandler))
       server.setHandler(handlerList)
+      // 启动server
       server.start()
+      // 获得本地port
       port = server.getConnectors()(0).getLocalPort()
     }
   }
@@ -56,6 +63,7 @@ class HttpServer(resourceBase: File) extends Logging {
   /**
    * Get the URI of this HTTP server (http://host:port)
    */
+   // http server的uri
   def uri: String = {
     if (server == null) {
       throw new ServerStateException("Server is not started")

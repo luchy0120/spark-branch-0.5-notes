@@ -108,7 +108,14 @@ class PairRDDFunctions[K: ClassManifest, V: ClassManifest](
     bufs.flatMapValues(buf => buf)
   }
 
+// 和另一个rdd 进行 join
   def join[W](other: RDD[(K, W)], partitioner: Partitioner): RDD[(K, (V, W))] = {
+    // partitioner 使用自己的partitioner，所以other 是shuffle 类型的dependency
+
+    // 两个rdd  cogroup 出来的东西是   { key , [ [v1,v2,v3] , [a1,a2] ] }
+    // 所以需要faltMapValues 来将 values 两两组合，并打散
+
+   // 生成 { key , [v1,a1] } , {key , [v1, a2]} , {key , [v1, a3]} 等等
     this.cogroup(other, partitioner).flatMapValues {
       case (vs, ws) =>
         for (v <- vs.iterator; w <- ws.iterator) yield (v, w)
@@ -152,10 +159,14 @@ class PairRDDFunctions[K: ClassManifest, V: ClassManifest](
     groupByKey(defaultPartitioner(self))
   }
 
+  //
   def join[W](other: RDD[(K, W)]): RDD[(K, (V, W))] = {
+    // 如果自己有 partitioner ，就还是用自己的partitioner，
+
     join(other, defaultPartitioner(self, other))
   }
 
+  // 如果指定 分片数，就用hashPartition
   def join[W](other: RDD[(K, W)], numSplits: Int): RDD[(K, (V, W))] = {
     join(other, new HashPartitioner(numSplits))
   }
@@ -189,6 +200,7 @@ class PairRDDFunctions[K: ClassManifest, V: ClassManifest](
   }
   
   def cogroup[W](other: RDD[(K, W)], partitioner: Partitioner): RDD[(K, (Seq[V], Seq[W]))] = {
+    // 将自己和other 组成一个cogroup ， 自己是 窄依赖， other 是宽依赖
     val cg = new CoGroupedRDD[K](
         Seq(self.asInstanceOf[RDD[(_, _)]], other.asInstanceOf[RDD[(_, _)]]),
         partitioner)
@@ -244,6 +256,7 @@ class PairRDDFunctions[K: ClassManifest, V: ClassManifest](
    * Choose a partitioner to use for a cogroup-like operation between a number of RDDs. If any of
    * the RDDs already has a partitioner, choose that one, otherwise use a default HashPartitioner.
    */
+   // 如果遇到有partition的 rdd ，就用那个 partitioner ，不然就用 hash partitioner
   def defaultPartitioner(rdds: RDD[_]*): Partitioner = {
     for (r <- rdds if r.partitioner != None) {
       return r.partitioner.get

@@ -17,6 +17,7 @@ import spark.broadcast._
 /**
  * The Mesos executor for Spark.
  */
+ // mesos的excutor
 class Executor extends org.apache.mesos.Executor with Logging {
   var classLoader: ClassLoader = null
   var threadPool: ExecutorService = null
@@ -32,6 +33,7 @@ class Executor extends org.apache.mesos.Executor with Logging {
     // Read spark.* system properties from executor arg
     val props = Utils.deserialize[Array[(String, String)]](executorInfo.getData.toByteArray)
     for ((key, value) <- props) {
+    // 将key value 设置金 System prperties里
       System.setProperty(key, value)
     }
 
@@ -39,10 +41,12 @@ class Executor extends org.apache.mesos.Executor with Logging {
     RemoteActor.classLoader = getClass.getClassLoader
     
     // Create our ClassLoader (using spark properties) and set it on this thread
+    // 创建classLoader 并设置给当前线程
     classLoader = createClassLoader()
     Thread.currentThread.setContextClassLoader(classLoader)
     
     // Initialize Spark environment (using system properties read above)
+    // 从system的properties 里面创建spark Env
     env = SparkEnv.createFromSystemProperties(false)
     SparkEnv.set(env)
     // Old stuff that isn't yet using env
@@ -58,35 +62,48 @@ class Executor extends org.apache.mesos.Executor with Logging {
   override def reregistered(d: ExecutorDriver, s: SlaveInfo) {}
   
   override def launchTask(d: ExecutorDriver, task: TaskInfo) {
+  // 创建一个taskrunner 来执行 task
     threadPool.execute(new TaskRunner(task, d))
   }
 
   class TaskRunner(info: TaskInfo, d: ExecutorDriver)
   extends Runnable {
     override def run() = {
+    // 跑起来， 拿到taskId
       val tid = info.getTaskId.getValue
+      // 设置一下当前线程的 spark env 环境
       SparkEnv.set(env)
+      // 设置当前线程的classLoader
       Thread.currentThread.setContextClassLoader(classLoader)
+      // 闭包序列化器
       val ser = SparkEnv.get.closureSerializer.newInstance()
       logInfo("Running task ID " + tid)
+      // task的状态： 包括id ， 运行状态 ， 发给exec driver
       d.sendStatusUpdate(TaskStatus.newBuilder()
           .setTaskId(info.getTaskId)
           .setState(TaskState.TASK_RUNNING)
           .build())
       try {
         Accumulators.clear
+        // 解开 taskinfo 里的data ，变成一个task
         val task = ser.deserialize[Task[Any]](info.getData.toByteArray, classLoader)
+
         for (gen <- task.generation) {// Update generation if any is set
           env.mapOutputTracker.updateGeneration(gen)
         }
+        // task 运行
         val value = task.run(tid.toInt)
         val accumUpdates = Accumulators.values
+        // task的结果，包括accumulate 的结果
         val result = new TaskResult(value, accumUpdates)
+
+        // task id 的状态为finished， 结果被序列化起来交给 mesos
         d.sendStatusUpdate(TaskStatus.newBuilder()
             .setTaskId(info.getTaskId)
             .setState(TaskState.TASK_FINISHED)
             .setData(ByteString.copyFrom(ser.serialize(result)))
             .build())
+        // 打log 完成了 task
         logInfo("Finished task ID " + tid)
       } catch {
         case ffe: FetchFailedException => {
@@ -157,6 +174,7 @@ class Executor extends org.apache.mesos.Executor with Logging {
   }
 
   // Download a file from a given URL to the local filesystem
+  // 将远程文件下载到本地
   private def downloadFile(url: URL, localPath: String) {
     val in = url.openStream()
     val out = new FileOutputStream(localPath)
@@ -179,11 +197,13 @@ class Executor extends org.apache.mesos.Executor with Logging {
 /**
  * Executor entry point.
  */
+ // 启动 executor
 object Executor extends Logging {
   def main(args: Array[String]) {
     MesosNativeLibrary.load()
     // Create a new Executor and start it running
     val exec = new Executor
+    //  通过 mesos 启动它
     new MesosExecutorDriver(exec).run()
   }
 }

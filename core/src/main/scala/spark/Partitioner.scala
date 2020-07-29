@@ -1,12 +1,13 @@
 package spark
 
 abstract class Partitioner extends Serializable {
+// 分成多少个分区
   def numPartitions: Int
   def getPartition(key: Any): Int
 }
 
 // 根据  key 的 hash 定位 partition
-// hash partition
+// hash partition， 需要分成几份
 class HashPartitioner(partitions: Int) extends Partitioner {
   // 总共分成几片
   def numPartitions = partitions

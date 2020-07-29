@@ -267,6 +267,7 @@ class SparkContext(
   // Methods for creating shared variables
 
   def accumulator[T](initialValue: T)(implicit param: AccumulatorParam[T]) =
+  // 创建一个accumulator
     new Accumulator(initialValue, param)
 
   /**

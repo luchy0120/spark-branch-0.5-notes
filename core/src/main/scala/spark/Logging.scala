@@ -17,11 +17,14 @@ trait Logging {
   // Method to get or create the logger for this object
   def log: Logger = {
     if (log_ == null) {
+      // 本class的名字
       var className = this.getClass().getName()
       // Ignore trailing $'s in the class names for Scala objects
+      // 去掉结尾
       if (className.endsWith("$")) {
         className = className.substring(0, className.length - 1)
       }
+      // 获取 logger
       log_ = LoggerFactory.getLogger(className)
     }
     return log_

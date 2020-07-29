@@ -11,18 +11,21 @@ class Accumulable[T,R] (
   extends Serializable {
   
   val id = Accumulators.newId
+  // master 上的初始 value
   @transient
   private var value_ = initialValue // Current value on master
+  // 使用初始化变量创建一个param 对象，准备传给workers
   val zero = param.zero(initialValue)  // Zero value to be passed to workers
   var deserialized = false
 
-// 注册一下自己
+  // 注册一下自己，注册在 origin里面，key是id value 是自己
   Accumulators.register(this, true)
 
   /**
    * add more data to this accumulator / accumulable
    * @param term the data to add
    */
+   // 将worker 上的数据添加到value 里
   def += (term: R) { value_ = param.addAccumulator(value_, term) }
 
   /**
@@ -32,6 +35,7 @@ class Accumulable[T,R] (
    * @param term the other Accumulable that will get merged with this
    */
   def ++= (term: T) { value_ = param.addInPlace(value_, term)}
+  // 不是分序列化出来的
   def value = {
     if (!deserialized) value_
     else throw new UnsupportedOperationException("Can't use read value in task")
@@ -48,6 +52,7 @@ class Accumulable[T,R] (
    */
   def localValue = value_
 
+  // 不是反序列化的，设置值
   def value_= (t: T) {
     if (!deserialized) value_ = t
     else throw new UnsupportedOperationException("Can't use value_= in task")
@@ -147,6 +152,7 @@ private object Accumulators {
   }
 
   def register(a: Accumulable[_,_], original: Boolean): Unit = synchronized {
+  // 不用original 的话，就为当前线程新创建一个map，使用id 注册自己
     if (original) {
       originals(a.id) = a
     } else {
@@ -162,6 +168,7 @@ private object Accumulators {
   }
 
   // Get the values of the local accumulators for the current thread (by ID)
+  // 获得所有local accumlators 的值
   def values: Map[Long, Any] = synchronized {
     val ret = Map[Long, Any]()
     for ((id, accum) <- localAccums.getOrElse(Thread.currentThread, Map())) {

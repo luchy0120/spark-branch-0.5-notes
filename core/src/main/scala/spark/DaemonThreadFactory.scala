@@ -5,6 +5,8 @@ import java.util.concurrent.ThreadFactory
 /**
  * A ThreadFactory that creates daemon threads
  */
+
+ // 生产daemon 的thread factory
 private object DaemonThreadFactory extends ThreadFactory {
   override def newThread(r: Runnable): Thread = {
     val t = new Thread(r);

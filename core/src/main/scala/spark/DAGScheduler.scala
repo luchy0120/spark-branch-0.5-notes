@@ -265,7 +265,7 @@ private trait DAGScheduler extends Scheduler with Logging {
             //设置当前的stage为running，因为当前的stage没有未处理完的依赖的stage
             running += stage
           } else {
-          // 没有跑好的parent stages们
+          // 遍历没有跑好的parent stages们，让他们先生成task去跑
             for (parent <- missing) {
             // 提交没跑的parent stage
               submitStage(parent)
@@ -339,13 +339,18 @@ private trait DAGScheduler extends Scheduler with Logging {
                 numFinished += 1
               case smt: ShuffleMapTask =>
                 val stage = idToStage(smt.stageId)
+                // 增加partition 的输出 location
                 stage.addOutputLoc(smt.partition, evt.result.asInstanceOf[String])
                 // 当前stage已经没有需要跑的task了
                 if (running.contains(stage) && pendingTasks(stage).isEmpty) {
+                  // 这个stage 已经结束了  准备
                   // 跑新的stage
                   logInfo(stage + " finished; looking for newly runnable stages")
                   running -= stage
+                  // 如果是shuffleMaptask，这里重复判断了
                   if (stage.shuffleDep != None) {
+                    // 跑完之后将 shuffle 的outputs 记录下来
+                    // 取每个partition 的server list 的第一个
                     mapOutputTracker.registerMapOutputs(
                       stage.shuffleDep.get.shuffleId,
                       stage.outputLocs.map(_.head).toArray)
@@ -354,6 +359,7 @@ private trait DAGScheduler extends Scheduler with Logging {
                   val newlyRunnable = new ArrayBuffer[Stage]
                   // 从waiting 队列里拿出没有前置依赖的 stage
                   for (stage <- waiting if getMissingParentStages(stage) == Nil) {
+                    // 添加到 可以run 的队列里
                     newlyRunnable += stage
                   }
                   // 从waiting里删掉

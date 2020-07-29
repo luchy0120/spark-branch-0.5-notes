@@ -16,6 +16,7 @@ import de.javakaffee.kryoserializers.KryoReflectionFactorySupport
  * Zig-zag encoder used to write object sizes to serialization streams.
  * Based on Kryo's integer encoder.
  */
+ // zigzag 编码
 object ZigZag {
   def writeInt(n: Int, out: OutputStream) {
     var value = n
@@ -70,8 +71,10 @@ extends SerializationStream {
 
   def writeObject[T](t: T) {
     kryo.writeClassAndObject(buf, t)
+    // 写出一个buffer 的大小到 outStream， 大小使用zigzag编码
     ZigZag.writeInt(buf.position(), out)
     buf.flip()
+    // 将buffer里的数据写出去
     channel.write(buf)
     buf.clear()
   }
@@ -83,7 +86,9 @@ extends SerializationStream {
 class KryoDeserializationStream(buf: ObjectBuffer, in: InputStream)
 extends DeserializationStream {
   def readObject[T](): T = {
+    // 通过zigzag 读入大小
     val len = ZigZag.readInt(in)
+    // 读入buffer
     buf.readClassAndObject(in, len).asInstanceOf[T]
   }
 

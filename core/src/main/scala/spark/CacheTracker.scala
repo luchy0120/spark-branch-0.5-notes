@@ -35,6 +35,7 @@ class CacheTrackerActor extends DaemonActor with Logging {
   private def getCacheAvailable(host: String): Long = getCacheCapacity(host) - getCacheUsage(host)
   
   def act() {
+  // master 启动
     val port = System.getProperty("spark.master.port").toInt
     RemoteActor.alive(port)
     RemoteActor.register('CacheTracker, self)
@@ -42,13 +43,14 @@ class CacheTrackerActor extends DaemonActor with Logging {
     
     loop {
       react {
+        // slave 汇报它启动了，capacity 是多少
         case SlaveCacheStarted(host: String, size: Long) =>
           logInfo("Started slave cache (size %s) on %s".format(
             Utils.memoryBytesToString(size), host))
           slaveCapacity.put(host, size)
           slaveUsage.put(host, 0)
           reply('OK)
-
+        // rddId 和 一堆partition 的host
         case RegisterRDD(rddId: Int, numPartitions: Int) =>
           logInfo("Registering RDD " + rddId + " with " + numPartitions + " partitions")
           locs(rddId) = Array.fill[List[String]](numPartitions)(Nil)
@@ -117,10 +119,12 @@ class CacheTracker(isMaster: Boolean, theCache: Cache) extends Logging {
   val cache = theCache.newKeySpace()
 
   if (isMaster) {
+  // master 上启一个cachtracker
     val tracker = new CacheTrackerActor
     tracker.start()
     trackerActor = tracker
   } else {
+  // worker 要询问master
     val host = System.getProperty("spark.master.host")
     val port = System.getProperty("spark.master.port").toInt
     trackerActor = RemoteActor.select(Node(host, port), 'CacheTracker)
@@ -133,6 +137,7 @@ class CacheTracker(isMaster: Boolean, theCache: Cache) extends Logging {
   val loading = new HashSet[(Int, Int)]
   
   // Registers an RDD (on master only)
+  // 向master 发送rdd 的信息
   def registerRDD(rddId: Int, numPartitions: Int) {
     registeredRddIds.synchronized {
       if (!registeredRddIds.contains(rddId)) {

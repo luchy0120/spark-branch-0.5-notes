@@ -22,6 +22,7 @@ extends DaemonActor with Logging {
     
     loop {
       react {
+      // master 收到worker 来要shuffle 的map output
         case GetMapOutputLocations(shuffleId: Int) =>
           logInfo("Asked to get map output locations for shuffle " + shuffleId)
           // 返回相关的server uri
@@ -37,7 +38,7 @@ extends DaemonActor with Logging {
 
 class MapOutputTracker(isMaster: Boolean) extends Logging {
   var trackerActor: AbstractActor = null
-
+  // shuffle id 和servers 的 mapping
   private var serverUris = new ConcurrentHashMap[Int, Array[String]]
 
   // Incremented every time a fetch fails so that client nodes know to clear
@@ -46,16 +47,18 @@ class MapOutputTracker(isMaster: Boolean) extends Logging {
   private var generationLock = new java.lang.Object
   
   if (isMaster) {
-  // master 上， 启动一个actor
+  // master 上， 启动一个actor，用来接收 wroker的请求
     val tracker = new MapOutputTrackerActor(serverUris)
     tracker.start()
     trackerActor = tracker
   } else {
+  // 在worker 上，需要和 master去通信
     val host = System.getProperty("spark.master.host")
     val port = System.getProperty("spark.master.port").toInt
     trackerActor = RemoteActor.select(Node(host, port), 'MapOutputTracker)
   }
 
+  // 注册一下，为shuffleId 开一个数组
   def registerShuffle(shuffleId: Int, numMaps: Int) {
     if (serverUris.get(shuffleId) != null) {
       throw new IllegalArgumentException("Shuffle ID " + shuffleId + " registered twice")
@@ -70,11 +73,12 @@ class MapOutputTracker(isMaster: Boolean) extends Logging {
       array(mapId) = serverUri
     }
   }
-  
+  // 将一堆 locations 添加进来
   def registerMapOutputs(shuffleId: Int, locs: Array[String]) {
     serverUris.put(shuffleId, Array[String]() ++ locs)
   }
 
+  // 将shuffleId 里 的 第mapId个serveruri 清空，并增加generation数
   def unregisterMapOutput(shuffleId: Int, mapId: Int, serverUri: String) {
     var array = serverUris.get(shuffleId)
     if (array != null) {
@@ -94,11 +98,12 @@ class MapOutputTracker(isMaster: Boolean) extends Logging {
   
   // Called on possibly remote nodes to get the server URIs for a given shuffle
   def getServerUris(shuffleId: Int): Array[String] = {
-  // 某个shuffle 对应的servers
+  // 获取某个shuffle 对应的servers
     val locs = serverUris.get(shuffleId)
     if (locs == null) {
       logInfo("Don't have map  outputs for " + shuffleId + ", fetching them")
       fetching.synchronized {
+        // 其他人正在fetching吗？ 如果是就可以等在这里 ，一定有结果
         if (fetching.contains(shuffleId)) {
           // Someone else is fetching it; wait for them to be done
           while (fetching.contains(shuffleId)) {
@@ -112,12 +117,14 @@ class MapOutputTracker(isMaster: Boolean) extends Logging {
           // 其他人fetching 进来了
           return serverUris.get(shuffleId)
         } else {
+         // 如果没有其他人fetching， 那么我来fetching
           fetching += shuffleId
         }
       }
       // We won the race to fetch the output locs; do so
       // 由我来fetching
       logInfo("Doing the fetch; tracker actor = " + trackerActor)
+      // 向 master 发请求
       val fetched = (trackerActor !? GetMapOutputLocations(shuffleId)).asInstanceOf[Array[String]]
       // 拿过来保存好
       serverUris.put(shuffleId, fetched)
@@ -136,12 +143,14 @@ class MapOutputTracker(isMaster: Boolean) extends Logging {
   }
 
   def stop() {
+  // 向master 发送关闭请求
     trackerActor !? StopMapOutputTracker
     serverUris.clear()
     trackerActor = null
   }
 
   // Called on master to increment the generation number
+  // 增加generation 1
   def incrementGeneration() {
     generationLock.synchronized {
       generation += 1
@@ -158,6 +167,7 @@ class MapOutputTracker(isMaster: Boolean) extends Logging {
   // Called on workers to update the generation number, potentially clearing old outputs
   // because of a fetch failure. (Each Mesos task calls this with the latest generation
   // number on the master at the time it was created.)
+  // workers 清理原来的 shuffleId 的 serveruri cache
   def updateGeneration(newGen: Long) {
     generationLock.synchronized {
       if (newGen > generation) {

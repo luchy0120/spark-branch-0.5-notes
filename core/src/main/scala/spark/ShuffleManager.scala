@@ -29,11 +29,12 @@ class ShuffleManager extends Logging {
     var localDirUuid: UUID = null
 
     while (!foundLocalDir && tries < 10) {
-        // 多试一次
+        // 多试一次， 一共10次
       tries += 1
       try {
         // 本地目录随机号
         localDirUuid = UUID.randomUUID
+        // 创建一个随机的本地目录，用来放shuffle 出来的文件，和broadcast的东西
         localDir = new File(localDirRoot, "spark-local-" + localDirUuid)
         if (!localDir.exists) {
           localDir.mkdirs()
@@ -62,7 +63,7 @@ class ShuffleManager extends Logging {
       }
     })
 
-    // 有端口吗
+    // 使用另外的server还是使用自己启动的jetty server ？
     val extServerPort = System.getProperty(
       "spark.localFileShuffle.external.server.port", "-1").toInt
     if (extServerPort != -1) {
@@ -72,12 +73,12 @@ class ShuffleManager extends Logging {
       if (extServerPath != "" && !extServerPath.endsWith("/")) {
         extServerPath += "/"
       }
-      // 本地ip 加 port 加path 加本地的文件夹
+      // 本地ip 加 port 加path 加uuid
       serverUri = "http://%s:%d/%s/spark-local-%s".format(
         Utils.localIpAddress, extServerPort, extServerPath, localDirUuid)
     } else {
       // Create our own server
-      // 本地server
+      // 本地server，启动，把worker上localdir 暴露出去
       server = new HttpServer(localDir)
       server.start()
       serverUri = server.uri

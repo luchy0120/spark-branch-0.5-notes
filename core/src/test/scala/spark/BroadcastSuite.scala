@@ -18,6 +18,7 @@ class BroadcastSuite extends FunSuite with BeforeAndAfter {
     val list = List(1, 2, 3, 4)
     val listBroadcast = sc.broadcast(list)
     val results = sc.parallelize(1 to 2).map(x => (x, listBroadcast.value.sum))
+    // 1 和 2 都会做加法
     assert(results.collect.toSet === Set((1, 10), (2, 10)))
   }
 
